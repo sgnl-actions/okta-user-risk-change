@@ -13,6 +13,7 @@ var script = {
    * Main execution handler - implement your job logic here
    * @param {Object} params - Job input parameters
    * @param {Object} context - Execution context with env, secrets, outputs
+   * @param {string} context.secrets.BEARER_AUTH_TOKEN - Bearer token for Okta API authentication
    * @returns {Object} Job results
    */
   invoke: async (params, context) => {
@@ -32,8 +33,8 @@ var script = {
     console.log(`Running in ${environment} environment`);
 
     // Access secrets securely (example)
-    if (context.secrets.API_KEY) {
-      console.log(`Using API key ending in ...${context.secrets.API_KEY.slice(-4)}`);
+    if (context.secrets.BEARER_AUTH_TOKEN) {
+      console.log(`Using API key ending in ...${context.secrets.BEARER_AUTH_TOKEN.slice(-4)}`);
     }
 
     // Use outputs from previous jobs in workflow
