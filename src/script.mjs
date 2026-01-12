@@ -1,111 +1,154 @@
-/**
- * SGNL Job Template
- *
- * This template provides a starting point for implementing SGNL jobs.
- * Replace this implementation with your specific business logic.
- */
+import { transmitSET } from '@sgnl-ai/set-transmitter';
+import { resolveJSONPathTemplates, signSET, getBaseURL, getAuthorizationHeader } from '@sgnl-actions/utils';
 
-import {resolveJSONPathTemplates} from '@sgnl-actions/utils';
+// Event type constant for Okta User Risk Change
+const USER_RISK_CHANGE_EVENT = 'https://schemas.okta.com/secevent/okta/event-type/user-risk-change';
+
+
+/**
+ * Parse subject JSON string
+ */
+function parseSubject(subjectStr) {
+  try {
+    return JSON.parse(subjectStr);
+  } catch (error) {
+    throw new Error(`Invalid subject JSON: ${error.message}`);
+  }
+}
+
+/**
+ * Parse reason JSON if it's i18n format, otherwise return as string
+ */
+function parseReason(reasonStr) {
+  if (!reasonStr) return reasonStr;
+
+  // Try to parse as JSON for i18n format
+  try {
+    const parsed = JSON.parse(reasonStr);
+    // If it's an object, it's likely i18n format
+    if (typeof parsed === 'object' && parsed !== null) {
+      return parsed;
+    }
+  } catch {
+    // Not JSON, treat as plain string
+  }
+
+  return reasonStr;
+}
 
 export default {
   /**
-   * Main execution handler - implement your job logic here
+   * Main execution handler - transmits an Okta User Risk Change event as a Security Event Token
+   *
    * @param {Object} params - Job input parameters
-   * @param {Object} context - Execution context with env, secrets, outputs
-   * @returns {Object} Job results
+   * @param {string} params.subject - Subject identifier JSON (e.g., {"format":"email","email":"user@example.com"})
+   * @param {string} params.audience - Intended recipient of the SET (e.g., https://customer.okta.com/)
+   * @param {string} params.address - Optional destination URL override (defaults to ADDRESS environment variable)
+   * @param {string} params.previous_level - Previous user risk level
+   * @param {string} params.current_level - Current user risk level
+   * @param {string} params.initiating_entity - Entity that initiated the user risk change (optional)
+   * @param {string} params.reason_admin - Admin-readable reason for the change (optional)
+   * @param {string} params.reason_user - User-readable reason for the change (optional)
+   *
+   * @param {Object} context - Execution context with secrets and environment
+   * @param {Object} context.environment - Environment configuration
+   * @param {string} context.environment.ADDRESS - Default destination URL for the SET transmission
+   *
+   * The configured auth type will determine which of the following environment variables and secrets are available
+   * @param {string} context.secrets.BEARER_AUTH_TOKEN
+   *
+   * @param {string} context.secrets.BASIC_USERNAME
+   * @param {string} context.secrets.BASIC_PASSWORD
+   *
+   * @param {string} context.secrets.OAUTH2_CLIENT_CREDENTIALS_CLIENT_SECRET
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_AUDIENCE
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_AUTH_STYLE
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_CLIENT_ID
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_SCOPE
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_TOKEN_URL
+   *
+   * @param {string} context.secrets.OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN
+   *
+   * @param {Object} context.crypto - Cryptographic operations API
+   * @param {Function} context.crypto.signJWT - Function to sign JWTs with server-side keys
+   *
+   * @returns {Object} Transmission result with status, statusCode, body, and retryable flag
    */
   invoke: async (params, context) => {
-    console.log('Starting job execution');
-    console.log(`Processing target: ${params.target}`);
-    console.log(`Action: ${params.action}`);
-
     const jobContext = context.data || {};
 
     // Resolve JSONPath templates in params
     const { result: resolvedParams, errors } = resolveJSONPathTemplates(params, jobContext);
     if (errors.length > 0) {
-     console.warn('Template resolution errors:', errors);
+      console.warn('Template resolution errors:', errors);
     }
 
+    const address = getBaseURL(resolvedParams, context);
+    const authHeader = await getAuthorizationHeader(context);
 
-    // TODO: Replace with your implementation
-    const { target, action, options = [], dry_run = false } = resolvedParams;
+    // Parse parameters
+    const subject = parseSubject(resolvedParams.subject);
 
-    if (dry_run) {
-      console.log('DRY RUN: No changes will be made');
-    }
-
-    // Access environment variables
-    const environment = context.env.ENVIRONMENT || 'development';
-    console.log(`Running in ${environment} environment`);
-
-    // Access secrets securely (example)
-    if (context.secrets.API_KEY) {
-      console.log(`Using API key ending in ...${context.secrets.API_KEY.slice(-4)}`);
-    }
-
-    // Use outputs from previous jobs in workflow
-    if (context.outputs && Object.keys(context.outputs).length > 0) {
-      console.log(`Available outputs from ${Object.keys(context.outputs).length} previous jobs`);
-      console.log(`Previous job outputs: ${Object.keys(context.outputs).join(', ')}`);
-    }
-
-    // TODO: Implement your business logic here
-    console.log(`Performing ${action} on ${target}...`);
-
-    if (options.length > 0) {
-      console.log(`Processing ${options.length} options: ${options.join(', ')}`);
-    }
-
-    console.log(`Successfully completed ${action} on ${target}`);
-
-    // Return structured results
-    return {
-      status: dry_run ? 'dry_run_completed' : 'success',
-      target: target,
-      action: action,
-      options_processed: options.length,
-      environment: environment,
-      processed_at: new Date().toISOString()
-      // Job completed successfully
+    // Build event payload
+    const eventPayload = {
+      subject: subject,
+      event_timestamp: Math.floor(Date.now() / 1000),
+      previous_level: resolvedParams.previous_level,
+      current_level: resolvedParams.current_level
     };
+
+    // Add optional event claims
+    if (resolvedParams.initiating_entity) {
+      eventPayload.initiating_entity = resolvedParams.initiating_entity;
+    }
+    if (resolvedParams.reason_admin) {
+      eventPayload.reason_admin = parseReason(resolvedParams.reason_admin);
+    }
+    if (resolvedParams.reason_user) {
+      eventPayload.reason_user = parseReason(resolvedParams.reason_user);
+    }
+
+    // Build the SET payload (reserved claims will be added during signing)
+    const setPayload = {
+      aud: resolvedParams.audience,
+      events: {
+        [USER_RISK_CHANGE_EVENT]: eventPayload
+      }
+    };
+
+    const jwt = await signSET(context, setPayload);
+
+    // Transmit the SET
+    return await transmitSET(jwt, address, {
+      headers: {
+        'Authorization': authHeader,
+        'User-Agent': 'SGNL-CAEP-Hub/2.0'
+      }
+    });
   },
 
   /**
-   * Error recovery handler - implement error handling logic
-   * @param {Object} params - Original params plus error information
-   * @param {Object} context - Execution context
-   * @returns {Object} Recovery results
+   * Error handler for retryable failures
    */
   error: async (params, _context) => {
-    const { error, target } = params;
-    console.error(`Job encountered error while processing ${target}: ${error.message}`);
+    const { error } = params;
 
-    // TODO: Implement your error recovery logic
-    // Example: Check if error is retryable and attempt recovery
+    // Check if this is a retryable error
+    if (error.message?.includes('429') ||
+        error.message?.includes('502') ||
+        error.message?.includes('503') ||
+        error.message?.includes('504')) {
+      return { status: 'retry_requested' };
+    }
 
-    // For now, just throw the error - implement your logic here
-    throw new Error(`Unable to recover from error: ${error.message}`);
+    // Non-retryable error
+    throw error;
   },
 
   /**
-   * Graceful shutdown handler - implement cleanup logic
-   * @param {Object} params - Original params plus halt reason
-   * @param {Object} context - Execution context
-   * @returns {Object} Cleanup results
+   * Cleanup handler
    */
-  halt: async (params, _context) => {
-    const { reason, target } = params;
-    console.log(`Job is being halted (${reason}) while processing ${target}`);
-
-    // TODO: Implement your cleanup logic
-    // Example: Save partial results, close connections, etc.
-
-    return {
-      status: 'halted',
-      target: target || 'unknown',
-      reason: reason,
-      halted_at: new Date().toISOString()
-    };
+  halt: async (_params, _context) => {
+    return { status: 'halted' };
   }
 };
