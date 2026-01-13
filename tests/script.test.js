@@ -1,130 +1,276 @@
-import script from '../src/script.mjs';
+import { jest } from '@jest/globals';
 
-describe('Job Template Script', () => {
-  const mockContext = {
-    env: {
-      ENVIRONMENT: 'test'
-    },
-    secrets: {
-      API_KEY: 'test-api-key-123456'
-    },
-    outputs: {},
-    partial_results: {},
-    current_step: 'start'
+// Mock dependencies before importing script
+jest.unstable_mockModule('@sgnl-ai/set-transmitter', () => ({
+  transmitSET: jest.fn().mockResolvedValue({
+    status: 'success',
+    statusCode: 200,
+    body: '{"success": true}',
+    retryable: false
+  })
+}));
+
+jest.unstable_mockModule('@sgnl-actions/utils', () => ({
+  resolveJSONPathTemplates: jest.fn((params) => ({ result: params, errors: [] })),
+  signSET: jest.fn().mockResolvedValue('mock.jwt.token'),
+  getBaseURL: jest.fn((params, context) => params.address || context.environment?.ADDRESS),
+  getAuthorizationHeader: jest.fn().mockResolvedValue('Bearer test-token')
+}));
+
+const { transmitSET } = await import('@sgnl-ai/set-transmitter');
+const { resolveJSONPathTemplates, signSET, getBaseURL, getAuthorizationHeader } = await import('@sgnl-actions/utils');
+const script = await import('../src/script.mjs');
+
+describe('Okta User Risk Change', () => {
+  const validParams = {
+    audience: 'https://receiver.okta.com/',
+    subject: '{"format":"email","email":"user@example.com"}',
+    address: 'https://events.receiver.com/caep',
+    previous_level: 'low',
+    current_level: 'high'
   };
 
+  const mockContext = {
+    secrets: {
+      BEARER_AUTH_TOKEN: 'test-bearer-token'
+    },
+    environment: {
+      ADDRESS: 'https://default.receiver.com/events'
+    },
+    crypto: {
+      signJWT: jest.fn().mockResolvedValue('signed.jwt.token')
+    }
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    transmitSET.mockResolvedValue({
+      status: 'success',
+      statusCode: 200,
+      body: '{"success": true}',
+      retryable: false
+    });
+    resolveJSONPathTemplates.mockImplementation((params) => ({ result: params, errors: [] }));
+    signSET.mockResolvedValue('mock.jwt.token');
+    getBaseURL.mockImplementation((params, context) => params.address || context.environment?.ADDRESS);
+    getAuthorizationHeader.mockResolvedValue('Bearer test-token');
+  });
+
   describe('invoke handler', () => {
-    test('should execute successfully with minimal params', async () => {
-      const params = {
-        target: 'test-user@example.com',
-        action: 'create'
-      };
-
-      const result = await script.invoke(params, mockContext);
+    test('should successfully transmit SET with minimal required params', async () => {
+      const result = await script.default.invoke(validParams, mockContext);
 
       expect(result.status).toBe('success');
-      expect(result.target).toBe('test-user@example.com');
-      expect(result.action).toBe('create');
-      expect(result.status).toBeDefined();
-      expect(result.processed_at).toBeDefined();
-      expect(result.options_processed).toBe(0);
+      expect(result.statusCode).toBe(200);
+      expect(result.body).toBe('{"success": true}');
+      expect(result.retryable).toBe(false);
+
+      expect(getBaseURL).toHaveBeenCalledWith(validParams, mockContext);
+      expect(getAuthorizationHeader).toHaveBeenCalledWith(mockContext);
+      expect(signSET).toHaveBeenCalledWith(
+        mockContext,
+        expect.objectContaining({
+          aud: 'https://receiver.okta.com/',
+          events: expect.objectContaining({
+            'https://schemas.okta.com/secevent/okta/event-type/user-risk-change': expect.objectContaining({
+              subject: { format: 'email', email: 'user@example.com' },
+              event_timestamp: expect.any(Number),
+              previous_level: 'low',
+              current_level: 'high'
+            })
+          })
+        })
+      );
+
+      expect(transmitSET).toHaveBeenCalledWith(
+        'mock.jwt.token',
+        'https://events.receiver.com/caep',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Authorization': 'Bearer test-token',
+            'User-Agent': 'SGNL-CAEP-Hub/2.0'
+          })
+        })
+      );
     });
 
-    test('should handle dry run mode', async () => {
-      const params = {
-        target: 'test-user@example.com',
-        action: 'delete',
-        dry_run: true
+    test('should include all optional parameters in event payload', async () => {
+      const fullParams = {
+        ...validParams,
+        initiating_entity: 'admin',
+        reason_admin: '{"en": "User risk level changed", "es": "Nivel de riesgo del usuario cambiado"}',
+        reason_user: '{"en": "Your risk level has changed", "es": "Tu nivel de riesgo ha cambiado"}'
       };
 
-      const result = await script.invoke(params, mockContext);
-
-      expect(result.status).toBe('dry_run_completed');
-      expect(result.target).toBe('test-user@example.com');
-      expect(result.action).toBe('delete');
-    });
-
-    test('should process options array', async () => {
-      const params = {
-        target: 'test-group',
-        action: 'update',
-        options: ['force', 'notify', 'audit']
-      };
-
-      const result = await script.invoke(params, mockContext);
+      const result = await script.default.invoke(fullParams, mockContext);
 
       expect(result.status).toBe('success');
-      expect(result.target).toBe('test-group');
-      expect(result.options_processed).toBe(3);
+      expect(signSET).toHaveBeenCalledWith(
+        mockContext,
+        expect.objectContaining({
+          events: expect.objectContaining({
+            'https://schemas.okta.com/secevent/okta/event-type/user-risk-change': expect.objectContaining({
+              subject: { format: 'email', email: 'user@example.com' },
+              initiating_entity: 'admin',
+              reason_admin: { en: "User risk level changed", es: "Nivel de riesgo del usuario cambiado" },
+              reason_user: { en: "Your risk level has changed", es: "Tu nivel de riesgo ha cambiado" }
+            })
+          })
+        })
+      );
     });
 
-    test('should handle context with previous job outputs', async () => {
-      const contextWithOutputs = {
-        ...mockContext,
-        outputs: {
-          'create-user': {
-            user_id: '12345',
-            created_at: '2024-01-15T10:30:00Z'
-          },
-          'assign-groups': {
-            groups_assigned: 3
-          }
-        }
+    test('should use ADDRESS from environment when address param not provided', async () => {
+      const paramsWithoutAddress = {
+        ...validParams,
+        address: undefined
       };
 
-      const params = {
-        target: 'user-12345',
-        action: 'finalize'
+      await script.default.invoke(paramsWithoutAddress, mockContext);
+
+      expect(getBaseURL).toHaveBeenCalledWith(
+        expect.objectContaining({ address: undefined }),
+        mockContext
+      );
+    });
+
+    test('should parse subject JSON correctly', async () => {
+      await script.default.invoke(validParams, mockContext);
+
+      expect(signSET).toHaveBeenCalledWith(
+        mockContext,
+        expect.objectContaining({
+          events: expect.objectContaining({
+            'https://schemas.okta.com/secevent/okta/event-type/user-risk-change': expect.objectContaining({
+              subject: { format: 'email', email: 'user@example.com' }
+            })
+          })
+        })
+      );
+    });
+
+    test('should throw error for invalid subject JSON', async () => {
+      const invalidParams = {
+        ...validParams,
+        subject: 'invalid-json'
       };
 
-      const result = await script.invoke(params, contextWithOutputs);
+      await expect(script.default.invoke(invalidParams, mockContext)).rejects.toThrow(
+        'Invalid subject JSON'
+      );
+    });
 
-      expect(result.status).toBe('success');
-      expect(result.target).toBe('user-12345');
-      expect(result.status).toBeDefined();
+    test('should parse i18n reason strings as JSON objects', async () => {
+      const paramsWithI18nReason = {
+        ...validParams,
+        reason_admin: '{"en": "English reason", "es": "Razón en español"}'
+      };
+
+      await script.default.invoke(paramsWithI18nReason, mockContext);
+
+      expect(signSET).toHaveBeenCalledWith(
+        mockContext,
+        expect.objectContaining({
+          events: expect.objectContaining({
+            'https://schemas.okta.com/secevent/okta/event-type/user-risk-change': expect.objectContaining({
+              subject: { format: 'email', email: 'user@example.com' },
+              reason_admin: { en: "English reason", es: "Razón en español" }
+            })
+          })
+        })
+      );
+    });
+
+    test('should handle plain string reasons', async () => {
+      const paramsWithStringReason = {
+        ...validParams,
+        reason_admin: 'Simple string reason'
+      };
+
+      await script.default.invoke(paramsWithStringReason, mockContext);
+
+      expect(signSET).toHaveBeenCalledWith(
+        mockContext,
+        expect.objectContaining({
+          events: expect.objectContaining({
+            'https://schemas.okta.com/secevent/okta/event-type/user-risk-change': expect.objectContaining({
+              subject: { format: 'email', email: 'user@example.com' },
+              reason_admin: 'Simple string reason'
+            })
+          })
+        })
+      );
+    });
+
+    test('should resolve JSONPath templates', async () => {
+      resolveJSONPathTemplates.mockReturnValueOnce({
+        result: { ...validParams, previous_level: 'medium', current_level: 'critical' },
+        errors: []
+      });
+
+      await script.default.invoke(validParams, mockContext);
+
+      expect(resolveJSONPathTemplates).toHaveBeenCalledWith(validParams, {});
+    });
+
+    test('should log template resolution errors', async () => {
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      resolveJSONPathTemplates.mockReturnValueOnce({
+        result: validParams,
+        errors: ['Template error 1', 'Template error 2']
+      });
+
+      await script.default.invoke(validParams, mockContext);
+
+      expect(consoleWarnSpy).toHaveBeenCalledWith('Template resolution errors:', ['Template error 1', 'Template error 2']);
+      consoleWarnSpy.mockRestore();
+    });
+
+    test('should handle transmitSET failures', async () => {
+      transmitSET.mockResolvedValueOnce({
+        status: 'failed',
+        statusCode: 400,
+        body: 'Bad request',
+        retryable: false
+      });
+
+      const result = await script.default.invoke(validParams, mockContext);
+
+      expect(result.status).toBe('failed');
+      expect(result.statusCode).toBe(400);
+      expect(result.retryable).toBe(false);
     });
   });
 
   describe('error handler', () => {
-    test('should throw error by default', async () => {
+    test('should return retry_requested for retryable errors', async () => {
+      const retryableErrors = ['429', '502', '503', '504'];
+
+      for (const code of retryableErrors) {
+        const params = {
+          error: { message: `Error ${code}: Server error` }
+        };
+
+        const result = await script.default.error(params, mockContext);
+        expect(result).toEqual({ status: 'retry_requested' });
+      }
+    });
+
+    test('should re-throw non-retryable errors', async () => {
+      const testError = new Error('Invalid credentials');
       const params = {
-        target: 'test-user@example.com',
-        action: 'create',
-        error: {
-          message: 'Something went wrong',
-          code: 'ERROR_CODE'
-        }
+        error: testError
       };
 
-      await expect(script.error(params, mockContext)).rejects.toThrow('Unable to recover from error: Something went wrong');
+      await expect(script.default.error(params, mockContext)).rejects.toThrow(testError);
     });
   });
 
   describe('halt handler', () => {
-    test('should handle graceful shutdown', async () => {
-      const params = {
-        target: 'test-user@example.com',
-        reason: 'timeout'
-      };
+    test('should return halted status', async () => {
+      const result = await script.default.halt({}, mockContext);
 
-      const result = await script.halt(params, mockContext);
-
-      expect(result.status).toBe('halted');
-      expect(result.target).toBe('test-user@example.com');
-      expect(result.reason).toBe('timeout');
-      expect(result.halted_at).toBeDefined();
-    });
-
-    test('should handle halt without target', async () => {
-      const params = {
-        reason: 'system_shutdown'
-      };
-
-      const result = await script.halt(params, mockContext);
-
-      expect(result.status).toBe('halted');
-      expect(result.target).toBe('unknown');
-      expect(result.reason).toBe('system_shutdown');
+      expect(result).toEqual({ status: 'halted' });
     });
   });
 });
