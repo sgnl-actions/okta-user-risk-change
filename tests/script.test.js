@@ -223,6 +223,21 @@ describe('Okta User Risk Change', () => {
 
       await expect(script.default.error(params, mockContext)).rejects.toThrow(testError);
     });
+
+    test('should handle transmitSET failures', async () => {
+      transmitSET.mockResolvedValueOnce({
+        status: 'failed',
+        statusCode: 400,
+        body: 'Bad request',
+        retryable: false
+      });
+
+      const result = await script.default.invoke(validParams, mockContext);
+
+      expect(result.status).toBe('failed');
+      expect(result.statusCode).toBe(400);
+      expect(result.retryable).toBe(false);
+    });
   });
 
   describe('halt handler', () => {
