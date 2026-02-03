@@ -1,9 +1,8 @@
 import { transmitSET } from '@sgnl-ai/set-transmitter';
-import { resolveJSONPathTemplates, signSET, getBaseURL, getAuthorizationHeader } from '@sgnl-actions/utils';
+import { signSET, getBaseURL, getAuthorizationHeader } from '@sgnl-actions/utils';
 
 // Event type constant for Okta User Risk Change
 const USER_RISK_CHANGE_EVENT = 'https://schemas.okta.com/secevent/okta/event-type/user-risk-change';
-
 
 /**
  * Parse subject JSON string
@@ -75,42 +74,35 @@ export default {
    * @returns {Object} Transmission result with status, statusCode, body, and retryable flag
    */
   invoke: async (params, context) => {
-    const jobContext = context.data || {};
 
-    // Resolve JSONPath templates in params
-    const { result: resolvedParams, errors } = resolveJSONPathTemplates(params, jobContext);
-    if (errors.length > 0) {
-      console.warn('Template resolution errors:', errors);
-    }
-
-    const address = getBaseURL(resolvedParams, context);
+    const address = getBaseURL(params, context);
     const authHeader = await getAuthorizationHeader(context);
 
     // Parse parameters
-    const subject = parseSubject(resolvedParams.subject);
+    const subject = parseSubject(params.subject);
 
     // Build event payload
     const eventPayload = {
       subject: subject,
       event_timestamp: Math.floor(Date.now() / 1000),
-      previous_level: resolvedParams.previous_level,
-      current_level: resolvedParams.current_level
+      previous_level: params.previous_level,
+      current_level: params.current_level
     };
 
     // Add optional event claims
-    if (resolvedParams.initiating_entity) {
-      eventPayload.initiating_entity = resolvedParams.initiating_entity;
+    if (params.initiating_entity) {
+      eventPayload.initiating_entity = params.initiating_entity;
     }
-    if (resolvedParams.reason_admin) {
-      eventPayload.reason_admin = parseReason(resolvedParams.reason_admin);
+    if (params.reason_admin) {
+      eventPayload.reason_admin = parseReason(params.reason_admin);
     }
-    if (resolvedParams.reason_user) {
-      eventPayload.reason_user = parseReason(resolvedParams.reason_user);
+    if (params.reason_user) {
+      eventPayload.reason_user = parseReason(params.reason_user);
     }
 
     // Build the SET payload (reserved claims will be added during signing)
     const setPayload = {
-      aud: resolvedParams.audience,
+      aud: params.audience,
       events: {
         [USER_RISK_CHANGE_EVENT]: eventPayload
       }
