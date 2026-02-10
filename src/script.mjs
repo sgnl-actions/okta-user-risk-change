@@ -1,5 +1,5 @@
 import { transmitSET } from '@sgnl-ai/set-transmitter';
-import { signSET, getBaseURL, getAuthorizationHeader } from '@sgnl-actions/utils';
+import { signSET, getBaseURL, getAuthorizationHeader, SGNL_USER_AGENT } from '@sgnl-actions/utils';
 
 // Event type constant for Okta User Risk Change
 const USER_RISK_CHANGE_EVENT = 'https://schemas.okta.com/secevent/okta/event-type/user-risk-change';
@@ -114,7 +114,7 @@ export default {
     return await transmitSET(jwt, address, {
       headers: {
         'Authorization': authHeader,
-        'User-Agent': 'SGNL-CAEP-Hub/2.0'
+        'User-Agent': SGNL_USER_AGENT
       }
     });
   },

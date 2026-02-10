@@ -13,7 +13,8 @@ jest.unstable_mockModule('@sgnl-ai/set-transmitter', () => ({
 jest.unstable_mockModule('@sgnl-actions/utils', () => ({
   signSET: jest.fn().mockResolvedValue('mock.jwt.token'),
   getBaseURL: jest.fn((params, context) => params.address || context.environment?.ADDRESS),
-  getAuthorizationHeader: jest.fn().mockResolvedValue('Bearer test-token')
+  getAuthorizationHeader: jest.fn().mockResolvedValue('Bearer test-token'),
+  SGNL_USER_AGENT: 'SGNL-CAEP-Hub/2.0'
 }));
 
 const { transmitSET } = await import('@sgnl-ai/set-transmitter');
