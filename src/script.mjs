@@ -108,15 +108,29 @@ export default {
       }
     };
 
+    console.log("signing set...")
+
     const jwt = await signSET(context, setPayload);
 
+    console.log("jwt: " + jwt)
+    console.log("transmitting set....")
     // Transmit the SET
-    return await transmitSET(jwt, address, {
+    const transmittedSet =  await transmitSET(jwt, address, {
       headers: {
         'Authorization': authHeader,
         'User-Agent': SGNL_USER_AGENT
       }
     });
+    console.log("transmitted set: " + transmittedSet.status)
+
+    try {
+      const data = await transmittedSet.json();
+      console.log(data)
+    } catch {
+      console.error("couldnt parse response")
+    }
+
+    return transmittedSet
   },
 
   /**
