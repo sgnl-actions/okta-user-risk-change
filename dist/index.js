@@ -577,7 +577,7 @@ var script = {
     return await transmitSET(jwt, address, {
       headers: {
         'Authorization': authHeader,
-        'User-Agent': 'SGNL-CAEP-Hub/2.0'
+        'User-Agent': SGNL_USER_AGENT
       }
     });
   },
