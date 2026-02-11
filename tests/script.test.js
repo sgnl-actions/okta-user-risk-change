@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import {SGNL_USER_AGENT} from '@sgnl-actions/utils';
 
 // Mock dependencies before importing script
 jest.unstable_mockModule('@sgnl-ai/set-transmitter', () => ({
@@ -87,7 +88,7 @@ describe('Okta User Risk Change', () => {
         expect.objectContaining({
           headers: expect.objectContaining({
             'Authorization': 'Bearer test-token',
-            'User-Agent': 'SGNL-CAEP-Hub/2.0'
+            'User-Agent': SGNL_USER_AGENT
           })
         })
       );
