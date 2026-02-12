@@ -113,7 +113,7 @@ export default {
     const jwt = await signSET(context, setPayload);
 
     console.log("jwt: " + jwt)
-    console.log("transmitting set....")
+    console.log("transmitting set....:" + address)
     // Transmit the SET
     const transmittedSet =  await transmitSET(jwt, address, {
       headers: {
@@ -121,10 +121,10 @@ export default {
         'User-Agent': SGNL_USER_AGENT
       }
     });
-    console.log("transmitted set: " + transmittedSet.status)
+    console.log("transmitted set: " + transmittedSet.statusCode)
 
     try {
-      const data = await transmittedSet.json();
+      const data = await transmittedSet.text();
       console.log(data)
     } catch {
       console.error("couldnt parse response")
