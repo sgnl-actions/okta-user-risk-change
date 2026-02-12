@@ -4,6 +4,8 @@ import { signSET, getBaseURL, getAuthorizationHeader, SGNL_USER_AGENT } from '@s
 // Event type constant for Okta User Risk Change
 const USER_RISK_CHANGE_EVENT = 'https://schemas.okta.com/secevent/okta/event-type/user-risk-change';
 
+const OKTA_SSF_SET_PATH = '/security/api/v1/security-events'
+
 /**
  * Parse subject JSON string
  */
@@ -13,6 +15,16 @@ function parseSubject(subjectStr) {
   } catch (error) {
     throw new Error(`Invalid subject JSON: ${error.message}`);
   }
+}
+
+function getAddressSuffix(address) {
+  // For backwards compatibility, if the address already contains this suffix don't re-append it.
+	if (address.endsWith(OKTA_SSF_SET_PATH)) {
+		return "";
+	}
+
+	// https://developer.okta.com/docs/api/openapi/okta-management/management/tag/SSFSecurityEventToken/#tag/SSFSecurityEventToken/operation/publishSecurityEventTokens
+	return OKTA_SSF_SET_PATH;
 }
 
 /**
@@ -76,6 +88,8 @@ export default {
   invoke: async (params, context) => {
 
     const address = getBaseURL(params, context);
+    const fullAddress = address + getAddressSuffix(address);
+
     const authHeader = await getAuthorizationHeader(context);
 
     // Parse parameters
@@ -111,7 +125,7 @@ export default {
     const jwt = await signSET(context, setPayload);
 
     // Transmit the SET
-    return await transmitSET(jwt, address, {
+    return await transmitSET(jwt, fullAddress, {
       headers: {
         'Authorization': authHeader,
         'User-Agent': SGNL_USER_AGENT
