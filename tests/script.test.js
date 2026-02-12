@@ -1,6 +1,8 @@
 import { jest } from '@jest/globals';
 import {SGNL_USER_AGENT} from '@sgnl-actions/utils';
 
+const OKTA_SSF_SET_PATH = '/security/api/v1/security-events';
+
 // Mock dependencies before importing script
 jest.unstable_mockModule('@sgnl-ai/set-transmitter', () => ({
   transmitSET: jest.fn().mockResolvedValue({
@@ -84,7 +86,7 @@ describe('Okta User Risk Change', () => {
 
       expect(transmitSET).toHaveBeenCalledWith(
         'mock.jwt.token',
-        'https://events.receiver.com/caep',
+        'https://events.receiver.com/caep' + OKTA_SSF_SET_PATH,
         expect.objectContaining({
           headers: expect.objectContaining({
             'Authorization': 'Bearer test-token',
