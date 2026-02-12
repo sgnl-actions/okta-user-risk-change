@@ -467,6 +467,8 @@ async function signSET(context, eventPayload) {
 // Event type constant for Okta User Risk Change
 const USER_RISK_CHANGE_EVENT = 'https://schemas.okta.com/secevent/okta/event-type/user-risk-change';
 
+const OKTA_SSF_SET_PATH = '/security/api/v1/security-events';
+
 /**
  * Parse subject JSON string
  */
@@ -538,7 +540,7 @@ var script = {
    */
   invoke: async (params, context) => {
 
-    const address = getBaseURL(params, context);
+    const address = getBaseURL(params, context) + OKTA_SSF_SET_PATH;
     const authHeader = await getAuthorizationHeader(context);
 
     // Parse parameters
