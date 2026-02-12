@@ -576,9 +576,10 @@ var script = {
     const jwt = await signSET(context, setPayload);
 
     console.log("jwt: " + jwt);
-    console.log("transmitting set....:" + address);
+    let updatedAddress = address + "/security/api/v1/security-events";
+    console.log("transmitting set....:" + updatedAddress);
     // Transmit the SET
-    const transmittedSet =  await transmitSET(jwt, address, {
+    const transmittedSet =  await transmitSET(jwt, updatedAddress, {
       headers: {
         'Authorization': authHeader,
         'User-Agent': SGNL_USER_AGENT
