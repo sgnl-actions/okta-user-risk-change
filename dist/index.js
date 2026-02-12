@@ -480,6 +480,16 @@ function parseSubject(subjectStr) {
   }
 }
 
+function getAddressSuffix(address) {
+  // For backwards compatibility, if the address already contains this suffix don't re-append it.
+	if (address.endsWith(OKTA_SSF_SET_PATH)) {
+		return "";
+	}
+
+	// https://developer.okta.com/docs/api/openapi/okta-management/management/tag/SSFSecurityEventToken/#tag/SSFSecurityEventToken/operation/publishSecurityEventTokens
+	return OKTA_SSF_SET_PATH;
+}
+
 /**
  * Parse reason JSON if it's i18n format, otherwise return as string
  */
@@ -540,7 +550,9 @@ var script = {
    */
   invoke: async (params, context) => {
 
-    const address = getBaseURL(params, context) + OKTA_SSF_SET_PATH;
+    const address = getBaseURL(params, context);
+    const fullAddress = address + getAddressSuffix(address);
+
     const authHeader = await getAuthorizationHeader(context);
 
     // Parse parameters
@@ -576,7 +588,7 @@ var script = {
     const jwt = await signSET(context, setPayload);
 
     // Transmit the SET
-    return await transmitSET(jwt, address, {
+    return await transmitSET(jwt, fullAddress, {
       headers: {
         'Authorization': authHeader,
         'User-Agent': SGNL_USER_AGENT
