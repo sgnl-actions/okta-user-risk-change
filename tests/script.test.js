@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import {SGNL_USER_AGENT} from '@sgnl-actions/utils';
+import { SGNL_USER_AGENT } from '@sgnl-actions/utils';
 
 const OKTA_SSF_SET_PATH = '/security/api/v1/security-events';
 
@@ -114,8 +114,8 @@ describe('Okta User Risk Change', () => {
             'https://schemas.okta.com/secevent/okta/event-type/user-risk-change': expect.objectContaining({
               subject: { format: 'email', email: 'user@example.com' },
               initiating_entity: 'admin',
-              reason_admin: { en: "User risk level changed", es: "Nivel de riesgo del usuario cambiado" },
-              reason_user: { en: "Your risk level has changed", es: "Tu nivel de riesgo ha cambiado" }
+              reason_admin: { en: 'User risk level changed', es: 'Nivel de riesgo del usuario cambiado' },
+              reason_user: { en: 'Your risk level has changed', es: 'Tu nivel de riesgo ha cambiado' }
             })
           })
         })
@@ -176,7 +176,7 @@ describe('Okta User Risk Change', () => {
           events: expect.objectContaining({
             'https://schemas.okta.com/secevent/okta/event-type/user-risk-change': expect.objectContaining({
               subject: { format: 'email', email: 'user@example.com' },
-              reason_admin: { en: "English reason", es: "Razón en español" }
+              reason_admin: { en: 'English reason', es: 'Razón en español' }
             })
           })
         })
