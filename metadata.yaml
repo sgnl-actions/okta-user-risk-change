@@ -1,4 +1,4 @@
-name: Okta User Risk Change
+name: okta-user-risk-change
 description: Transmits an Okta User Risk Change event as a Security Event Token (SET) to a specified endpoint
 
 inputs:
